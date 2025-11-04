@@ -8,6 +8,8 @@ import '../utils/provider_extensions.dart';
 import '../utils/video_player_navigation.dart';
 import '../screens/media_detail_screen.dart';
 import '../screens/season_detail_screen.dart';
+import '../screens/artist_detail_screen.dart';
+import '../screens/album_detail_screen.dart';
 import '../theme/theme_helper.dart';
 import 'media_context_menu.dart';
 
@@ -56,6 +58,34 @@ class _MediaCardState extends State<MediaCard> {
       );
       // Season screen doesn't return a refresh flag, but we can refresh anyway
       widget.onRefresh?.call(widget.item.ratingKey);
+    } else if (itemType == 'artist') {
+      // For artists, show artist detail screen with albums
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ArtistDetailScreen(artist: widget.item),
+        ),
+      );
+      widget.onRefresh?.call(widget.item.ratingKey);
+    } else if (itemType == 'album') {
+      // For albums, show album detail screen with tracks
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AlbumDetailScreen(album: widget.item),
+        ),
+      );
+      widget.onRefresh?.call(widget.item.ratingKey);
+    } else if (itemType == 'track') {
+      // For tracks, start music playback
+      final result = await navigateToVideoPlayer(
+        context,
+        metadata: widget.item,
+      );
+      // Refresh parent screen if result indicates it's needed
+      if (result == true) {
+        widget.onRefresh?.call(widget.item.ratingKey);
+      }
     } else {
       // For all other types (shows, movies), show detail screen
       final result = await Navigator.push<bool>(

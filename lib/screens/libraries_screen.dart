@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../client/plex_client.dart';
+import '../mixins/item_updatable.dart';
+import '../mixins/refreshable.dart';
+import '../models/plex_filter.dart';
 import '../models/plex_library.dart';
 import '../models/plex_metadata.dart';
-import '../models/plex_filter.dart';
 import '../models/plex_sort.dart';
+import '../providers/hidden_libraries_provider.dart';
 import '../providers/plex_client_provider.dart';
 import '../providers/settings_provider.dart';
-import '../providers/hidden_libraries_provider.dart';
-import '../utils/provider_extensions.dart';
-import '../widgets/media_card.dart';
-import '../widgets/desktop_app_bar.dart';
-import '../widgets/app_bar_back_button.dart';
-import '../widgets/context_menu_wrapper.dart';
-import '../services/storage_service.dart';
 import '../services/settings_service.dart';
-import '../mixins/refreshable.dart';
-import '../mixins/item_updatable.dart';
+import '../services/storage_service.dart';
 import '../theme/theme_helper.dart';
+import '../utils/provider_extensions.dart';
+import '../widgets/album_card.dart';
+import '../widgets/app_bar_back_button.dart';
+import '../widgets/desktop_app_bar.dart';
+import '../widgets/media_card.dart';
 
 class LibrariesScreen extends StatefulWidget {
   const LibrariesScreen({super.key});
@@ -80,7 +81,8 @@ class _LibrariesScreenState extends State<LibrariesScreen>
       final orderedLibraries = _applyLibraryOrder(allLibraries, savedOrder);
 
       setState(() {
-        _allLibraries = orderedLibraries; // Store all libraries with ordering applied
+        _allLibraries =
+            orderedLibraries; // Store all libraries with ordering applied
         _isLoadingLibraries = false;
       });
 
@@ -99,8 +101,9 @@ class _LibrariesScreenState extends State<LibrariesScreen>
         String? libraryKeyToLoad;
         if (savedLibraryKey != null) {
           // Check if saved library exists and is visible
-          final libraryExists = visibleLibraries
-              .any((lib) => lib.key == savedLibraryKey);
+          final libraryExists = visibleLibraries.any(
+            (lib) => lib.key == savedLibraryKey,
+          );
           if (libraryExists) {
             libraryKeyToLoad = savedLibraryKey;
           }
@@ -189,12 +192,15 @@ class _LibrariesScreenState extends State<LibrariesScreen>
         .where((lib) => !hiddenKeys.contains(lib.key))
         .toList();
 
-
     // Find the library by key
-    final libraryIndex = visibleLibraries.indexWhere((lib) => lib.key == libraryKey);
+    final libraryIndex = visibleLibraries.indexWhere(
+      (lib) => lib.key == libraryKey,
+    );
     if (libraryIndex == -1) return; // Library not found or hidden
 
-    final isChangingLibrary = !_isInitialLoad && _selectedLibraryKey != libraryKey;
+    final selectedLibrary = visibleLibraries[libraryIndex];
+    final isChangingLibrary =
+        !_isInitialLoad && _selectedLibraryKey != libraryKey;
 
     // Extract context dependencies before async operations
     final clientProvider = context.plexClient;
@@ -247,6 +253,7 @@ class _LibrariesScreenState extends State<LibrariesScreen>
       // Load content
       final items = await client.getLibraryContent(
         libraryKey,
+        libraryType: selectedLibrary.type,
         filters: filtersWithSort,
       );
       setState(() {
@@ -356,8 +363,22 @@ class _LibrariesScreenState extends State<LibrariesScreen>
         );
       }
 
+      // Find the selected library to get its type
+      final hiddenLibrariesProvider = Provider.of<HiddenLibrariesProvider>(
+        context,
+        listen: false,
+      );
+      final hiddenKeys = hiddenLibrariesProvider.hiddenLibraryKeys;
+      final visibleLibraries = _allLibraries
+          .where((lib) => !hiddenKeys.contains(lib.key))
+          .toList();
+      final selectedLibrary = visibleLibraries.firstWhere(
+        (lib) => lib.key == _selectedLibraryKey!,
+      );
+
       final items = await client.getLibraryContent(
         _selectedLibraryKey!,
+        libraryType: selectedLibrary.type,
         filters: filtersWithSort,
       );
       setState(() {
@@ -381,10 +402,7 @@ class _LibrariesScreenState extends State<LibrariesScreen>
     // Save sort preference for this library
     final storage = await StorageService.getInstance();
     final sortKey = sort.getSortKey(descending: descending);
-    await storage.saveLibrarySort(
-      _selectedLibraryKey!,
-      sortKey,
-    );
+    await storage.saveLibrarySort(_selectedLibraryKey!, sortKey);
 
     // Reload content with new sort
     _applyFilters();
@@ -411,7 +429,9 @@ class _LibrariesScreenState extends State<LibrariesScreen>
       context,
       listen: false,
     );
-    final isHidden = hiddenLibrariesProvider.hiddenLibraryKeys.contains(library.key);
+    final isHidden = hiddenLibrariesProvider.hiddenLibraryKeys.contains(
+      library.key,
+    );
 
     if (isHidden) {
       await hiddenLibrariesProvider.unhideLibrary(library.key);
@@ -425,7 +445,10 @@ class _LibrariesScreenState extends State<LibrariesScreen>
       if (isCurrentlySelected) {
         // Compute visible libraries after hiding
         final visibleLibraries = _allLibraries
-            .where((lib) => !hiddenLibrariesProvider.hiddenLibraryKeys.contains(lib.key))
+            .where(
+              (lib) =>
+                  !hiddenLibrariesProvider.hiddenLibraryKeys.contains(lib.key),
+            )
             .toList();
 
         if (visibleLibraries.isNotEmpty) {
@@ -434,7 +457,6 @@ class _LibrariesScreenState extends State<LibrariesScreen>
       }
     }
   }
-
 
   void _showFiltersBottomSheet() {
     showModalBottomSheet(
@@ -498,7 +520,6 @@ class _LibrariesScreenState extends State<LibrariesScreen>
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     // Watch for hidden libraries changes to trigger rebuild
@@ -524,7 +545,10 @@ class _LibrariesScreenState extends State<LibrariesScreen>
             actions: [
               if (_allLibraries.isNotEmpty)
                 IconButton(
-                  icon: const Icon(Icons.edit, semanticLabel: 'Manage Libraries'),
+                  icon: const Icon(
+                    Icons.edit,
+                    semanticLabel: 'Manage Libraries',
+                  ),
                   onPressed: _showLibraryManagementSheet,
                 ),
               if (_sortOptions.isNotEmpty)
@@ -603,48 +627,48 @@ class _LibrariesScreenState extends State<LibrariesScreen>
                   vertical: 8,
                 ),
                 child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: List.generate(visibleLibraries.length, (index) {
-                            final library = visibleLibraries[index];
-                            final isSelected = library.key == _selectedLibraryKey;
-                            final t = tokens(context);
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: ChoiceChip(
-                                label: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      _getLibraryIcon(library.type),
-                                      size: 16,
-                                      color: isSelected ? t.bg : t.text,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(library.title),
-                                  ],
-                                ),
-                                selected: isSelected,
-                                onSelected: (selected) {
-                                  if (selected) {
-                                    _loadLibraryContent(library.key);
-                                  }
-                                },
-                                backgroundColor: t.surface,
-                                selectedColor: t.text,
-                                side: BorderSide(color: t.outline),
-                                labelStyle: TextStyle(
-                                  color: isSelected ? t.bg : t.text,
-                                  fontWeight: isSelected
-                                      ? FontWeight.w600
-                                      : FontWeight.w400,
-                                ),
-                                showCheckmark: false,
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: List.generate(visibleLibraries.length, (index) {
+                      final library = visibleLibraries[index];
+                      final isSelected = library.key == _selectedLibraryKey;
+                      final t = tokens(context);
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _getLibraryIcon(library.type),
+                                size: 16,
+                                color: isSelected ? t.bg : t.text,
                               ),
-                            );
-                          }),
+                              const SizedBox(width: 6),
+                              Text(library.title),
+                            ],
+                          ),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            if (selected) {
+                              _loadLibraryContent(library.key);
+                            }
+                          },
+                          backgroundColor: t.surface,
+                          selectedColor: t.text,
+                          side: BorderSide(color: t.outline),
+                          labelStyle: TextStyle(
+                            color: isSelected ? t.bg : t.text,
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                          ),
+                          showCheckmark: false,
                         ),
-                      ),
+                      );
+                    }),
+                  ),
+                ),
               ),
             ),
 
@@ -698,17 +722,31 @@ class _LibrariesScreenState extends State<LibrariesScreen>
                       context,
                       context.watch<SettingsProvider>().libraryDensity,
                     ),
-                    childAspectRatio: 2 / 3.3,
+                    // Use different aspect ratios for albums vs other media
+                    childAspectRatio:
+                        _items.isNotEmpty &&
+                            _items.first.type.toLowerCase() == 'album'
+                        ? 0.85 // Square-ish for albums with minimal text
+                        : 2 / 3.3, // Standard poster ratio for movies/shows
                     crossAxisSpacing: 0,
                     mainAxisSpacing: 0,
                   ),
                   delegate: SliverChildBuilderDelegate((context, index) {
                     final item = _items[index];
-                    return MediaCard(
-                      key: Key(item.ratingKey),
-                      item: item,
-                      onRefresh: updateItem,
-                    );
+                    // Use AlbumCard for albums, MediaCard for everything else
+                    if (item.type.toLowerCase() == 'album') {
+                      return AlbumCard(
+                        key: Key(item.ratingKey),
+                        album: item,
+                        onRefresh: updateItem,
+                      );
+                    } else {
+                      return MediaCard(
+                        key: Key(item.ratingKey),
+                        item: item,
+                        onRefresh: updateItem,
+                      );
+                    }
                   }, childCount: _items.length),
                 ),
               ),
@@ -1243,7 +1281,8 @@ class _LibraryManagementSheet extends StatefulWidget {
   });
 
   @override
-  State<_LibraryManagementSheet> createState() => _LibraryManagementSheetState();
+  State<_LibraryManagementSheet> createState() =>
+      _LibraryManagementSheetState();
 }
 
 class _LibraryManagementSheetState extends State<_LibraryManagementSheet> {
@@ -1348,7 +1387,9 @@ class _LibraryManagementSheetState extends State<_LibraryManagementSheet> {
                           children: [
                             Icon(
                               Icons.drag_indicator,
-                              color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.5),
+                              color: Theme.of(
+                                context,
+                              ).textTheme.bodyMedium?.color?.withOpacity(0.5),
                             ),
                             const SizedBox(width: 8),
                             Icon(_getLibraryIcon(library.type)),

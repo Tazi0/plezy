@@ -209,6 +209,7 @@ class PlexClient {
   /// Get library content by section ID
   Future<List<PlexMetadata>> getLibraryContent(
     String sectionId, {
+    String? libraryType,
     int? start,
     int? size,
     Map<String, String>? filters,
@@ -222,8 +223,15 @@ class PlexClient {
       queryParams.addAll(filters);
     }
 
+    // Use appropriate endpoint based on library type
+    String endpoint = '/library/sections/$sectionId/all';
+    if (libraryType?.toLowerCase() == 'artist') {
+      // For music libraries, show albums instead of artists by default
+      endpoint = '/library/sections/$sectionId/albums';
+    }
+
     final response = await _dio.get(
-      '/library/sections/$sectionId/all',
+      endpoint,
       queryParameters: queryParams,
     );
 
