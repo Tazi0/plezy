@@ -1,20 +1,24 @@
 import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:provider/provider.dart';
+
+import '../models/plex_media_version.dart';
 import '../models/plex_metadata.dart';
 import '../models/plex_user_profile.dart';
 import '../providers/plex_client_provider.dart';
-import '../utils/provider_extensions.dart';
-import '../widgets/plex_video_controls.dart';
-import '../utils/language_codes.dart';
-import '../utils/app_logger.dart';
 import '../services/settings_service.dart';
+import '../utils/app_logger.dart';
+import '../utils/language_codes.dart';
 import '../utils/orientation_helper.dart';
-import '../utils/video_player_navigation.dart';
 import '../utils/platform_detector.dart';
-import '../models/plex_media_version.dart';
+import '../utils/provider_extensions.dart';
+import '../utils/video_player_navigation.dart';
+import '../widgets/plex_video_controls.dart';
 
 class VideoPlayerScreen extends StatefulWidget {
   final PlexMetadata metadata;
@@ -145,8 +149,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       // Start periodic progress updates
       _startProgressTracking();
 
-      // Load next/previous episodes
-      _loadAdjacentEpisodes();
+      // Load next/previous episodes or tracks
+      _loadAdjacentContent();
     } catch (e) {
       appLogger.e('Failed to initialize player', error: e);
       if (mounted) {
@@ -157,18 +161,34 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     }
   }
 
-  Future<void> _loadAdjacentEpisodes() async {
-    if (widget.metadata.type.toLowerCase() != 'episode') {
+  Future<void> _loadAdjacentContent() async {
+    // Skip if not episode or track
+    final type = widget.metadata.type.toLowerCase();
+    if (type != 'episode' && type != 'track') {
       return;
     }
 
     try {
       final clientProvider = context.plexClient;
       final client = clientProvider.client;
-      if (client == null) return;
+      if (client == null) {
+        appLogger.d('No client available for loading next/previous');
+        return;
+      }
 
-      final next = await client.findAdjacentEpisode(widget.metadata, 1);
-      final previous = await client.findAdjacentEpisode(widget.metadata, -1);
+      appLogger.d(
+        'Loading next/previous for ${_isMusicTrack() ? "music track" : "video"}: ${widget.metadata.title}',
+      );
+
+      final next = _isMusicTrack()
+          ? await _findAdjacentTrack(1)
+          : await client.findAdjacentEpisode(widget.metadata, 1);
+      final previous = _isMusicTrack()
+          ? await _findAdjacentTrack(-1)
+          : await client.findAdjacentEpisode(widget.metadata, -1);
+
+      appLogger.d('Next track/episode: ${next?.title ?? "null"}');
+      appLogger.d('Previous track/episode: ${previous?.title ?? "null"}');
 
       if (mounted) {
         setState(() {
@@ -177,7 +197,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         });
       }
     } catch (e) {
-      // Silently handle errors
+      appLogger.e('Error loading next/previous', error: e);
     }
   }
 
@@ -800,19 +820,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         backgroundColor: Colors.black,
         body: Stack(
           children: [
-            // Video player
+            // Video player or album artwork
             Center(
-              child: Video(
-                controller: controller!,
-                controls: (state) => plexVideoControlsBuilder(
-                  player!,
-                  widget.metadata,
-                  onNext: _nextEpisode != null ? _playNext : null,
-                  onPrevious: _previousEpisode != null ? _playPrevious : null,
-                  availableVersions: _availableVersions,
-                  selectedMediaIndex: widget.selectedMediaIndex,
-                ),
-              ),
+              child: _isMusicTrack()
+                  ? _buildAlbumArtworkPlayer()
+                  : Video(
+                      controller: controller!,
+                      controls: (state) => plexVideoControlsBuilder(
+                        player!,
+                        widget.metadata,
+                        onNext: _nextEpisode != null ? _playNext : null,
+                        onPrevious: _previousEpisode != null
+                            ? _playPrevious
+                            : null,
+                        availableVersions: _availableVersions,
+                        selectedMediaIndex: widget.selectedMediaIndex,
+                      ),
+                    ),
             ),
             // Play Next Dialog
             if (_showPlayNextDialog && _nextEpisode != null)
@@ -909,6 +933,208 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // Check if the current media is a music track
+  bool _isMusicTrack() {
+    return widget.metadata.type.toLowerCase() == 'track';
+  }
+
+  // Find adjacent track in the same album
+  Future<PlexMetadata?> _findAdjacentTrack(int direction) async {
+    try {
+      final client = context.client;
+      if (client == null) {
+        appLogger.d('No client available for track navigation');
+        return null;
+      }
+
+      // Get parent album rating key
+      final albumRatingKey = widget.metadata.parentRatingKey;
+      if (albumRatingKey == null) {
+        appLogger.d(
+          'No parent album rating key found for track: ${widget.metadata.title}',
+        );
+        // Try alternative approach - check if this track has a parent title
+        if (widget.metadata.parentTitle != null) {
+          appLogger.d(
+            'Attempting to find album by title: ${widget.metadata.parentTitle}',
+          );
+          // This would require a more complex search, for now return null
+        }
+        return null;
+      }
+
+      appLogger.d(
+        'Finding adjacent track (direction: $direction) in album: $albumRatingKey',
+      );
+
+      // Get all tracks in the album
+      final tracks = await client.getChildren(albumRatingKey);
+      if (tracks.isEmpty) {
+        appLogger.d('No tracks found in album');
+        return null;
+      }
+
+      appLogger.d('Found ${tracks.length} tracks in album');
+
+      // Sort tracks by index (track number)
+      tracks.sort((a, b) {
+        final indexA = a.index ?? 999; // Put tracks without index at end
+        final indexB = b.index ?? 999;
+        return indexA.compareTo(indexB);
+      });
+
+      // Debug: Log all tracks
+      for (int i = 0; i < tracks.length; i++) {
+        appLogger.d(
+          'Track $i: ${tracks[i].title} (index: ${tracks[i].index}, ratingKey: ${tracks[i].ratingKey})',
+        );
+      }
+
+      // Find current track index
+      final currentIndex = tracks.indexWhere(
+        (track) => track.ratingKey == widget.metadata.ratingKey,
+      );
+      if (currentIndex == -1) {
+        appLogger.d('Current track not found in album tracks');
+        // Try finding by title as fallback
+        final currentIndexByTitle = tracks.indexWhere(
+          (track) => track.title == widget.metadata.title,
+        );
+        if (currentIndexByTitle != -1) {
+          appLogger.d(
+            'Found current track by title at index: $currentIndexByTitle',
+          );
+        } else {
+          return null;
+        }
+      }
+
+      final actualCurrentIndex = currentIndex != -1
+          ? currentIndex
+          : tracks.indexWhere((track) => track.title == widget.metadata.title);
+
+      appLogger.d('Current track index: $actualCurrentIndex');
+
+      // Calculate adjacent index
+      final adjacentIndex = actualCurrentIndex + direction;
+      if (adjacentIndex < 0 || adjacentIndex >= tracks.length) {
+        appLogger.d(
+          'Adjacent index out of bounds: $adjacentIndex (total tracks: ${tracks.length})',
+        );
+        return null;
+      }
+
+      final adjacentTrack = tracks[adjacentIndex];
+      appLogger.d(
+        'Found adjacent track: ${adjacentTrack.title} (index: $adjacentIndex)',
+      );
+      return adjacentTrack;
+    } catch (e) {
+      appLogger.e('Error finding adjacent track', error: e);
+      return null;
+    }
+  }
+
+  // Build album artwork display for music tracks
+  Widget _buildAlbumArtworkPlayer() {
+    return Stack(
+      children: [
+        // Album artwork background
+        Container(
+          width: double.infinity,
+          height: double.infinity,
+          color: Colors.black,
+          child: Center(
+            child: AspectRatio(
+              aspectRatio: 1.0,
+              child: Container(
+                constraints: const BoxConstraints(
+                  maxWidth: 400,
+                  maxHeight: 400,
+                ),
+                child: _buildAlbumArtwork(),
+              ),
+            ),
+          ),
+        ),
+        // Audio controls overlay
+        Positioned.fill(
+          child: plexVideoControlsBuilder(
+            player!,
+            widget.metadata,
+            onNext: _nextEpisode != null ? _playNext : null,
+            onPrevious: _previousEpisode != null ? _playPrevious : null,
+            availableVersions: _availableVersions,
+            selectedMediaIndex: widget.selectedMediaIndex,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Build the album artwork widget
+  Widget _buildAlbumArtwork() {
+    final albumArt =
+        widget.metadata.thumb ??
+        widget.metadata.parentThumb ??
+        widget.metadata.grandparentThumb;
+
+    if (albumArt != null) {
+      return Consumer<PlexClientProvider>(
+        builder: (context, clientProvider, child) {
+          final client = clientProvider.client;
+          if (client != null) {
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: CachedNetworkImage(
+                imageUrl: client.getThumbnailUrl(albumArt),
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.music_note,
+                    size: 100,
+                    color: Colors.white54,
+                  ),
+                ),
+              ),
+            );
+          }
+          return _buildFallbackArtwork();
+        },
+      );
+    } else {
+      return _buildFallbackArtwork();
+    }
+  }
+
+  // Fallback artwork when no image is available
+  Widget _buildFallbackArtwork() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Icon(Icons.music_note, size: 100, color: Colors.white54),
     );
   }
 }

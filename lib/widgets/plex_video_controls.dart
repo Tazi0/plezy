@@ -1,21 +1,23 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
+import 'package:macos_window_utils/macos_window_utils.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:macos_window_utils/macos_window_utils.dart';
-import '../models/plex_metadata.dart';
+
 import '../models/plex_media_info.dart';
 import '../models/plex_media_version.dart';
+import '../models/plex_metadata.dart';
 import '../providers/plex_client_provider.dart';
+import '../screens/video_player_screen.dart';
 import '../services/fullscreen_state_manager.dart';
 import '../services/keyboard_shortcuts_service.dart';
 import '../services/settings_service.dart';
 import '../utils/desktop_window_padding.dart';
 import '../utils/platform_detector.dart';
 import '../utils/provider_extensions.dart';
-import '../screens/video_player_screen.dart';
 import 'app_bar_back_button.dart';
 
 /// Custom video controls builder for Plex with chapter, audio, and subtitle support
@@ -361,8 +363,8 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
 
     // Clamp between 0 and video duration
     final clampedPosition = newPosition.isNegative
-      ? Duration.zero
-      : (newPosition > duration ? duration : newPosition);
+        ? Duration.zero
+        : (newPosition > duration ? duration : newPosition);
 
     widget.player.seek(clampedPosition);
   }
@@ -608,8 +610,10 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                   builder: (context, constraints) {
                     final height = constraints.maxHeight;
                     final width = constraints.maxWidth;
-                    final topExclude = height * 0.15; // Exclude top 15% (top bar)
-                    final bottomExclude = height * 0.15; // Exclude bottom 15% (seek slider)
+                    final topExclude =
+                        height * 0.15; // Exclude top 15% (top bar)
+                    final bottomExclude =
+                        height * 0.15; // Exclude bottom 15% (seek slider)
                     final leftZoneWidth = width * 0.35; // Left 35%
 
                     return Stack(
@@ -707,7 +711,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.metadata.grandparentTitle ?? widget.metadata.title,
+                  _getTitleForDisplay(),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -716,10 +720,10 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (widget.metadata.parentIndex != null &&
-                    widget.metadata.index != null)
+                const SizedBox(height: 4),
+                if (_shouldShowSubtitle())
                   Text(
-                    'S${widget.metadata.parentIndex} · E${widget.metadata.index} · ${widget.metadata.title}',
+                    _getSubtitleForDisplay(),
                     style: const TextStyle(color: Colors.white70, fontSize: 14),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -924,14 +928,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
 
   Widget _buildMacOSSingleLineTitle() {
     // Build single-line title combining series and episode info
-    final seriesName =
-        widget.metadata.grandparentTitle ?? widget.metadata.title;
-    final hasEpisodeInfo =
-        widget.metadata.parentIndex != null && widget.metadata.index != null;
-
-    final titleText = hasEpisodeInfo
-        ? '$seriesName · S${widget.metadata.parentIndex} E${widget.metadata.index} · ${widget.metadata.title}'
-        : seriesName;
+    final titleText = _getTitleForDisplay();
 
     return Text(
       titleText,
@@ -950,7 +947,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          widget.metadata.grandparentTitle ?? widget.metadata.title,
+          _getTitleForDisplay(),
           style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
@@ -959,16 +956,65 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        if (widget.metadata.parentIndex != null &&
-            widget.metadata.index != null)
+        const SizedBox(height: 4),
+        if (_shouldShowSubtitle())
           Text(
-            'S${widget.metadata.parentIndex} · E${widget.metadata.index} · ${widget.metadata.title}',
+            _getSubtitleForDisplay(),
             style: const TextStyle(color: Colors.white70, fontSize: 14),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
       ],
     );
+  }
+
+  // Helper methods for title display
+  bool _isMusicTrack() {
+    return widget.metadata.type.toLowerCase() == 'track';
+  }
+
+  String _getTitleForDisplay() {
+    if (_isMusicTrack()) {
+      // For music: "Artist - Title"
+      final artist = widget.metadata.grandparentTitle;
+      final title = widget.metadata.title;
+      if (artist != null && artist.isNotEmpty) {
+        return '$artist - $title';
+      }
+      return title;
+    } else {
+      // For TV/Movies: use original logic
+      final seriesName =
+          widget.metadata.grandparentTitle ?? widget.metadata.title;
+      final hasEpisodeInfo =
+          widget.metadata.parentIndex != null && widget.metadata.index != null;
+
+      return hasEpisodeInfo
+          ? '$seriesName · S${widget.metadata.parentIndex} E${widget.metadata.index} · ${widget.metadata.title}'
+          : seriesName;
+    }
+  }
+
+  bool _shouldShowSubtitle() {
+    if (_isMusicTrack()) {
+      // For music: show album name if available
+      return widget.metadata.parentTitle != null &&
+          widget.metadata.parentTitle!.isNotEmpty;
+    } else {
+      // For TV: show episode info if available
+      return widget.metadata.parentIndex != null &&
+          widget.metadata.index != null;
+    }
+  }
+
+  String _getSubtitleForDisplay() {
+    if (_isMusicTrack()) {
+      // For music: show album name
+      return widget.metadata.parentTitle ?? '';
+    } else {
+      // For TV: show episode info
+      return 'S${widget.metadata.parentIndex} · E${widget.metadata.index} · ${widget.metadata.title}';
+    }
   }
 
   Widget _buildDesktopBottomControls() {
@@ -1033,7 +1079,9 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
               // Previous chapter (or skip backward if no chapters)
               IconButton(
                 icon: Icon(
-                  _chapters.isEmpty ? _getReplayIcon(_seekTimeSmall) : Icons.fast_rewind,
+                  _chapters.isEmpty
+                      ? _getReplayIcon(_seekTimeSmall)
+                      : Icons.fast_rewind,
                   color: Colors.white,
                 ),
                 onPressed: _seekToPreviousChapter,
@@ -1065,7 +1113,9 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
               // Next chapter (or skip forward if no chapters)
               IconButton(
                 icon: Icon(
-                  _chapters.isEmpty ? _getForwardIcon(_seekTimeSmall) : Icons.fast_forward,
+                  _chapters.isEmpty
+                      ? _getForwardIcon(_seekTimeSmall)
+                      : Icons.fast_forward,
                   color: Colors.white,
                 ),
                 onPressed: _seekToNextChapter,
@@ -1878,8 +1928,8 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
 
       // Save the preference
       final settingsService = await SettingsService.getInstance();
-      final seriesKey = widget.metadata.grandparentRatingKey ??
-          widget.metadata.ratingKey;
+      final seriesKey =
+          widget.metadata.grandparentRatingKey ?? widget.metadata.ratingKey;
       await settingsService.setMediaVersionPreference(seriesKey, newMediaIndex);
 
       // Navigate to new player screen with the selected version
@@ -1888,12 +1938,13 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
         Navigator.pushReplacement(
           context,
           PageRouteBuilder<bool>(
-            pageBuilder: (context, animation, secondaryAnimation) => VideoPlayerScreen(
-              metadata: widget.metadata.copyWith(
-                viewOffset: currentPosition.inMilliseconds,
-              ),
-              selectedMediaIndex: newMediaIndex,
-            ),
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                VideoPlayerScreen(
+                  metadata: widget.metadata.copyWith(
+                    viewOffset: currentPosition.inMilliseconds,
+                  ),
+                  selectedMediaIndex: newMediaIndex,
+                ),
             transitionDuration: Duration.zero,
             reverseTransitionDuration: Duration.zero,
           ),
@@ -1901,9 +1952,9 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error switching version: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error switching version: $e')));
       }
     }
   }
