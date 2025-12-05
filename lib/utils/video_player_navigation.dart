@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../mpv/mpv.dart';
+import '../models/offline_media_item.dart';
 import '../models/plex_metadata.dart';
+import '../mpv/mpv.dart';
 import '../screens/video_player_screen.dart';
 import '../services/settings_service.dart';
 
@@ -69,5 +70,61 @@ Future<bool?> navigateToVideoPlayer(
     return navigator.pushReplacement<bool, bool>(route);
   } else {
     return navigator.push<bool>(route);
+  }
+}
+
+/// Navigates to the VideoPlayerScreen for offline media playback.
+///
+/// This function is specifically for playing offline downloaded content.
+/// It ensures that the video player uses the local file instead of streaming.
+///
+/// Parameters:
+/// - [context]: The build context for navigation
+/// - [metadata]: The Plex metadata for the content to play
+/// - [offlineItem]: The offline media item containing the local file path
+/// - [usePushReplacement]: If true, replaces current route instead of pushing
+///
+/// Returns a Future that completes with a boolean indicating whether the content
+/// was watched, or null if navigation was cancelled.
+Future<bool?> navigateToOfflineVideoPlayer(
+  BuildContext context, {
+  required PlexMetadata metadata,
+  required OfflineMediaItem offlineItem,
+  bool usePushReplacement = false,
+}) async {
+  final navigator = Navigator.of(context);
+
+  final route = PageRouteBuilder<bool>(
+    pageBuilder: (context, animation, secondaryAnimation) =>
+        OfflineVideoPlayerScreen(metadata: metadata, offlineItem: offlineItem),
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
+  );
+
+  if (usePushReplacement) {
+    return navigator.pushReplacement<bool, bool>(route);
+  } else {
+    return navigator.push<bool>(route);
+  }
+}
+
+/// Wrapper around VideoPlayerScreen that configures it for offline playback
+class OfflineVideoPlayerScreen extends StatelessWidget {
+  final PlexMetadata metadata;
+  final OfflineMediaItem offlineItem;
+
+  const OfflineVideoPlayerScreen({
+    super.key,
+    required this.metadata,
+    required this.offlineItem,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return VideoPlayerScreen(
+      metadata: metadata,
+      isOfflinePlayback: true,
+      offlineItem: offlineItem,
+    );
   }
 }

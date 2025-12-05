@@ -174,6 +174,16 @@ class OfflineProvider with ChangeNotifier {
     return completedMedia.any((item) => item.id == itemId);
   }
 
+  /// Get completed offline media item by metadata
+  OfflineMediaItem? getOfflineMediaItem(String ratingKey, String serverId) {
+    final itemId = '${serverId}_${ratingKey}';
+    try {
+      return completedMedia.firstWhere((item) => item.id == itemId);
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<void> clearAllDownloads() async {
     try {
       appLogger.d('Clearing all downloads and resetting database...');

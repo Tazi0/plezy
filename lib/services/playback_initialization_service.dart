@@ -1,24 +1,56 @@
-import 'plex_client.dart';
+import '../i18n/strings.g.dart';
+import '../models/offline_media_item.dart';
 import '../models/plex_media_info.dart';
 import '../models/plex_metadata.dart';
 import '../mpv/mpv.dart';
 import '../utils/app_logger.dart';
-import '../i18n/strings.g.dart';
+import 'offline_playback_service.dart';
+import 'plex_client.dart';
 
 /// Service responsible for fetching video playback data from the Plex server
 class PlaybackInitializationService {
   final PlexClient client;
+  final OfflineMediaItem? offlineItem;
+  final bool isOfflineMode;
+  final bool forceOfflinePlayback;
 
-  PlaybackInitializationService({required this.client});
+  PlaybackInitializationService({
+    required this.client,
+    this.offlineItem,
+    this.isOfflineMode = false,
+    this.forceOfflinePlayback = false,
+  });
 
   /// Fetch playback data for the given metadata
   ///
   /// Returns a PlaybackInitializationResult with video URL and available versions
+  /// Will use offline media if available and appropriate
   Future<PlaybackInitializationResult> getPlaybackData({
     required PlexMetadata metadata,
     required int selectedMediaIndex,
   }) async {
     try {
+      // Check if we should use offline playback
+      if (OfflinePlaybackService.shouldUseOfflinePlayback(
+        offlineItem: offlineItem,
+        isOfflineMode: isOfflineMode,
+        forceOfflinePlayback: forceOfflinePlayback,
+      )) {
+        if (offlineItem == null || !offlineItem!.isCompleted) {
+          throw PlaybackException(
+            t.messages.errorLoading(error: 'No offline media available'),
+          );
+        }
+
+        appLogger.d('Using offline playback for: ${metadata.title}');
+        return OfflinePlaybackService.getOfflinePlaybackData(
+          offlineItem: offlineItem!,
+        );
+      }
+
+      // Use online playback
+      appLogger.d('Using online playback for: ${metadata.title}');
+
       // Get consolidated playback data (URL, media info, and versions) in a single API call
       final playbackData = await client.getVideoPlaybackData(
         metadata.ratingKey,

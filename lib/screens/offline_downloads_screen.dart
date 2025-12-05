@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../i18n/strings.g.dart';
 import '../models/offline_media_item.dart';
+import '../models/plex_metadata.dart';
 import '../providers/offline_provider.dart';
 import '../utils/app_logger.dart';
+import '../utils/video_player_navigation.dart';
 
 class OfflineDownloadsScreen extends StatefulWidget {
   const OfflineDownloadsScreen({super.key});
@@ -500,14 +502,74 @@ class _OfflineDownloadsScreenState extends State<OfflineDownloadsScreen>
 
   void _handlePlayOfflineItem(OfflineMediaItem item) {
     appLogger.d('Playing offline item: ${item.title}');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Playing ${item.title} (offline player not implemented yet)',
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
+
+    // Convert offline item to PlexMetadata for video player navigation
+    final metadata = _createMetadataFromOfflineItem(item);
+
+    // Navigate to video player for offline playback
+    navigateToOfflineVideoPlayer(
+      context,
+      metadata: metadata,
+      offlineItem: item,
     );
+  }
+
+  /// Create PlexMetadata from OfflineMediaItem for video player compatibility
+  PlexMetadata _createMetadataFromOfflineItem(OfflineMediaItem item) {
+    // Extract metadata from stored mediaInfo if available
+    final mediaInfo = item.mediaInfo;
+
+    return PlexMetadata(
+      ratingKey: item.ratingKey,
+      key: '/library/metadata/${item.ratingKey}',
+      guid: mediaInfo?['guid'] as String?,
+      studio: mediaInfo?['studio'] as String?,
+      type: _convertOfflineTypeToPlexType(item.type),
+      title: item.title,
+      contentRating: mediaInfo?['contentRating'] as String?,
+      summary: mediaInfo?['summary'] as String?,
+      rating: mediaInfo?['rating'] != null
+          ? (mediaInfo!['rating'] as num).toDouble()
+          : null,
+      audienceRating: mediaInfo?['audienceRating'] != null
+          ? (mediaInfo!['audienceRating'] as num).toDouble()
+          : null,
+      year: mediaInfo?['year'] as int?,
+      thumb: mediaInfo?['thumb'] as String?,
+      art: mediaInfo?['art'] as String?,
+      duration: mediaInfo?['duration'] as int?,
+      addedAt: mediaInfo?['addedAt'] as int?,
+      updatedAt: mediaInfo?['updatedAt'] as int?,
+      // Episode-specific fields
+      grandparentRatingKey: mediaInfo?['grandparentRatingKey'] as String?,
+      parentRatingKey: mediaInfo?['parentRatingKey'] as String?,
+      grandparentTitle: mediaInfo?['grandparentTitle'] as String?,
+      parentTitle: mediaInfo?['parentTitle'] as String?,
+      grandparentThumb: mediaInfo?['grandparentThumb'] as String?,
+      parentThumb: mediaInfo?['parentThumb'] as String?,
+      grandparentArt: mediaInfo?['grandparentArt'] as String?,
+      grandparentTheme: mediaInfo?['grandparentTheme'] as String?,
+      index: mediaInfo?['index'] as int?,
+      parentIndex: mediaInfo?['parentIndex'] as int?,
+      // Use server ID from offline item
+      serverId: item.serverId,
+      // Resume position can be added later from progress cache
+      viewOffset: null,
+    );
+  }
+
+  /// Convert OfflineMediaType to Plex type string
+  String _convertOfflineTypeToPlexType(OfflineMediaType type) {
+    switch (type) {
+      case OfflineMediaType.movie:
+        return 'movie';
+      case OfflineMediaType.episode:
+        return 'episode';
+      case OfflineMediaType.season:
+        return 'season';
+      case OfflineMediaType.series:
+        return 'show';
+    }
   }
 
   Future<void> _deleteDownload(OfflineMediaItem item) async {

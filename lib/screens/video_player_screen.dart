@@ -6,13 +6,16 @@ import 'package:flutter/services.dart';
 import 'package:os_media_controls/os_media_controls.dart';
 import 'package:provider/provider.dart';
 
-import '../mpv/mpv.dart';
-
 import '../../services/plex_client.dart';
+import '../i18n/strings.g.dart';
+import '../models/offline_media_item.dart';
+import '../models/plex_media_info.dart';
 import '../models/plex_media_version.dart';
 import '../models/plex_metadata.dart';
-import '../models/plex_media_info.dart';
+import '../mpv/mpv.dart';
+import '../providers/offline_provider.dart';
 import '../providers/playback_state_provider.dart';
+import '../providers/user_profile_provider.dart';
 import '../services/episode_navigation_service.dart';
 import '../services/media_controls_manager.dart';
 import '../services/playback_initialization_service.dart';
@@ -20,15 +23,13 @@ import '../services/playback_progress_tracker.dart';
 import '../services/settings_service.dart';
 import '../services/track_selection_service.dart';
 import '../services/video_filter_manager.dart';
-import '../providers/user_profile_provider.dart';
 import '../utils/app_logger.dart';
+import '../utils/language_codes.dart';
 import '../utils/orientation_helper.dart';
 import '../utils/platform_detector.dart';
 import '../utils/provider_extensions.dart';
-import '../utils/language_codes.dart';
 import '../utils/video_player_navigation.dart';
 import '../widgets/video_controls/video_controls.dart';
-import '../i18n/strings.g.dart';
 
 class VideoPlayerScreen extends StatefulWidget {
   final PlexMetadata metadata;
@@ -36,6 +37,8 @@ class VideoPlayerScreen extends StatefulWidget {
   final SubtitleTrack? preferredSubtitleTrack;
   final double? preferredPlaybackRate;
   final int selectedMediaIndex;
+  final bool isOfflinePlayback;
+  final OfflineMediaItem? offlineItem;
 
   const VideoPlayerScreen({
     super.key,
@@ -44,6 +47,8 @@ class VideoPlayerScreen extends StatefulWidget {
     this.preferredSubtitleTrack,
     this.preferredPlaybackRate,
     this.selectedMediaIndex = 0,
+    this.isOfflinePlayback = false,
+    this.offlineItem,
   });
 
   @override
@@ -638,8 +643,22 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
       // Use server-specific client for this metadata
       final client = _getClientForMetadata(context);
 
-      // Initialize playback service
-      final playbackService = PlaybackInitializationService(client: client);
+      // Check for offline media (unless explicitly provided for offline playback)
+      final offlineProvider = context.read<OfflineProvider>();
+      final offlineItem = widget.isOfflinePlayback
+          ? widget.offlineItem
+          : offlineProvider.getOfflineMediaItem(
+              widget.metadata.ratingKey,
+              widget.metadata.serverId!,
+            );
+
+      // Initialize playback service with offline context
+      final playbackService = PlaybackInitializationService(
+        client: client,
+        offlineItem: offlineItem,
+        isOfflineMode: offlineProvider.isOfflineMode,
+        forceOfflinePlayback: widget.isOfflinePlayback,
+      );
 
       // Get playback data (video URL and available versions)
       final result = await playbackService.getPlaybackData(
