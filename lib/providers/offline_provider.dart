@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/offline_media_item.dart';
 import '../models/plex_metadata.dart';
+import '../providers/multi_server_provider.dart';
 import '../services/offline_service.dart';
 import '../utils/app_logger.dart';
 
@@ -38,6 +40,15 @@ class OfflineProvider with ChangeNotifier {
     } catch (e) {
       appLogger.e('Failed to initialize OfflineProvider: $e');
     }
+  }
+
+  /// Ensure MultiServerProvider is set on OfflineService for downloads
+  void _ensureMultiServerProvider(BuildContext context) {
+    final multiServerProvider = Provider.of<MultiServerProvider>(
+      context,
+      listen: false,
+    );
+    _offlineService.setMultiServerProvider(multiServerProvider);
   }
 
   Future<void> _checkConnectivity() async {
@@ -90,8 +101,12 @@ class OfflineProvider with ChangeNotifier {
     PlexMetadata metadata,
     String serverId,
     String serverName,
+    BuildContext context,
   ) async {
     try {
+      // Ensure MultiServerProvider is available for downloads
+      _ensureMultiServerProvider(context);
+
       // Check if already downloaded or downloading
       final existing = _offlineMedia.firstWhere(
         (item) =>
@@ -148,6 +163,18 @@ class OfflineProvider with ChangeNotifier {
     } catch (e) {
       appLogger.e('Failed to check if media is downloaded: $e');
       return false;
+    }
+  }
+
+  /// Cancel an active download
+  Future<void> cancelDownload(String itemId) async {
+    try {
+      await _offlineService.cancelDownload(itemId);
+      await _loadOfflineMedia();
+      appLogger.d('Cancelled download: $itemId');
+    } catch (e) {
+      appLogger.e('Failed to cancel download: $e');
+      rethrow;
     }
   }
 

@@ -43,7 +43,7 @@ class PlaybackInitializationService {
         }
 
         appLogger.d('Using offline playback for: ${metadata.title}');
-        return OfflinePlaybackService.getOfflinePlaybackData(
+        return await OfflinePlaybackService.getOfflinePlaybackData(
           offlineItem: offlineItem!,
         );
       }

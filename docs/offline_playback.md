@@ -1,10 +1,10 @@
-# Offline Playback Implementation
+# Offline Downloads & Playback Implementation
 
-This document describes how offline media playback has been implemented in Plezy.
+This document describes how offline media downloads and playback have been implemented in Plezy.
 
 ## Overview
 
-The offline playback functionality allows users to play downloaded media files using the existing video player infrastructure. When a user taps on a completed download, the app will use the local file path instead of streaming from the Plex server.
+The offline functionality allows users to download media files from Plex servers and play them locally using the existing video player infrastructure. Downloads are real video files fetched from Plex and stored locally for offline access.
 
 ## Architecture
 
@@ -55,6 +55,7 @@ The system automatically determines when to use offline playback based on:
 ### Data Conversion
 
 When converting from OfflineMediaItem to PlexMetadata:
+
 - Core metadata fields (title, type, ratingKey, etc.) are preserved
 - Episode-specific fields (season/episode numbers, show titles) are extracted from stored mediaInfo
 - Server information is maintained for proper identification
@@ -62,48 +63,96 @@ When converting from OfflineMediaItem to PlexMetadata:
 
 ## Technical Details
 
+### Real Video Downloads
+
+- **Actual File Downloads**: Downloads are real video files from Plex servers, not simulations
+- **Direct Stream URLs**: Uses Plex API to get direct video stream URLs
+- **Progress Tracking**: Real-time download progress with bytes downloaded/total size
+- **File Storage**: Videos saved to app documents directory with hashed filenames
+- **Retry Logic**: Automatic retry (up to 3 attempts) with exponential backoff
+- **Cancellation**: Downloads can be cancelled mid-progress
+- **File Validation**: Verifies downloaded files exist and have valid size
+
 ### File Path Handling
 
-- Offline media files are stored using the path from `OfflineMediaItem.localPath`
+- Offline media files are stored in `{AppDocuments}/Downloads/`
+- Filenames use format: `{SafeTitle}_{Hash8}.mp4`
+- Hash prevents filename conflicts for items with same title
 - The video player treats local file paths the same as remote URLs
-- No special handling is needed in the video player itself
+
+### Download Process
+
+1. **URL Acquisition**: Get direct stream URL from Plex API using `PlexClient.getVideoUrl()`
+2. **File Creation**: Create local file path and ensure parent directory exists
+3. **HTTP Download**: Stream video data using Dio with progress callbacks
+4. **Progress Updates**: Update database and emit progress events in real-time
+5. **Completion**: Mark as completed and remove from download queue
+6. **Error Handling**: Cleanup partial files on failure, retry up to 3 times
+
+### Download Management
+
+- **Queue Management**: Downloads are queued and processed sequentially
+- **Cancellation**: Active downloads can be cancelled via UI
+- **Storage Cleanup**: Failed/cancelled downloads automatically clean up files
+- **Database Persistence**: Download progress and metadata stored in SQLite
 
 ### Metadata Compatibility
 
 - The existing PlexMetadata model is reused for offline playback
-- This ensures compatibility with the existing video player infrastructure
+- Full metadata (title, description, episode info, etc.) preserved during download
 - Resume positions and other playback features work normally
 
 ### Error Handling
 
-- Validates that offline media is completed before attempting playback
-- Falls back gracefully if local files are missing or corrupted
-- Provides clear error messages for offline playback issues
+- **Network Errors**: Automatic retry with exponential backoff
+- **File System Errors**: Clean up partial downloads on write failures
+- **Cancellation**: Graceful handling of user-cancelled downloads
+- **Server Errors**: Clear error messages for authentication/permission issues
+- **Storage Issues**: Validation of available disk space and write permissions
 
 ## Limitations
 
 Current implementation has the following limitations:
 
-1. **External Subtitles**: External subtitle tracks are not supported for offline playback yet
-2. **Multiple Versions**: Only the downloaded version is available (no quality switching)
-3. **Advanced Media Info**: Complex media information parsing is simplified
-4. **Resume Positions**: Resume positions from the progress cache are not yet integrated
+1. **Sequential Downloads**: Only one download at a time (prevents server overload)
+2. **External Subtitles**: External subtitle tracks are not downloaded yet
+3. **Quality Selection**: Downloads use default quality from Plex (future: quality selection UI)
+4. **Background Downloads**: Downloads pause when app is backgrounded
+5. **Storage Management**: No automatic cleanup based on storage limits
 
 ## Future Enhancements
 
-Potential improvements for offline playback:
+Potential improvements for the download system:
 
-1. **Subtitle Support**: Download and cache external subtitle files
-2. **Resume Integration**: Use the progress cache for accurate resume positions
-3. **Quality Selection**: Allow downloading multiple quality versions
-4. **Background Sync**: Sync playback progress when connectivity is restored
-5. **Media Info**: Parse and reconstruct full PlexMediaInfo for advanced features
+1. **Quality Selection**: UI to choose download quality (720p, 1080p, 4K)
+2. **Subtitle Downloads**: Download and cache external subtitle files
+3. **Concurrent Downloads**: Support multiple simultaneous downloads
+4. **Background Downloads**: Continue downloads when app is backgrounded
+5. **Storage Management**: Automatic cleanup based on storage limits and LRU
+6. **Smart Downloads**: Download next episodes automatically
+7. **Bandwidth Controls**: Limit download speed and WiFi-only options
+8. **Download Scheduling**: Schedule downloads for off-peak hours
 
 ## Usage
 
-Users can play offline media in two ways:
+### Downloading Content
 
-1. **From Discover Screen**: Tap on any completed download shown in the "Downloaded Content" section
-2. **From Downloads Screen**: Either tap on a completed download or use the "Play" option from the menu
+1. **Browse Content**: Navigate to any movie or episode detail screen
+2. **Download Button**: Tap the download button (arrow down icon)
+3. **Progress Tracking**: Monitor download progress in the Downloads screen
+4. **Completion**: Content appears in "Downloaded Content" section when complete
 
-The offline playback is transparent to users - they use the same video player interface and controls as online playback.
+### Playing Offline Content
+
+1. **From Discover Screen**: Tap on any completed download in the "Downloaded Content" section
+2. **From Downloads Screen**: Tap on a completed download or use "Play" from the menu
+3. **Automatic Detection**: System automatically uses local files when available
+
+### Managing Downloads
+
+1. **View Progress**: Downloads screen shows active and completed downloads
+2. **Cancel Downloads**: Use menu option to cancel active downloads
+3. **Delete Content**: Remove downloaded files to free up storage
+4. **Clear All**: Bulk delete all downloads if needed
+
+The offline experience is transparent - users see the same video player interface and controls for both online streaming and offline playback.

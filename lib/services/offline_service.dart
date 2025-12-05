@@ -12,6 +12,8 @@ import 'package:sqflite/sqflite.dart';
 import '../models/download_queue_item.dart';
 import '../models/offline_media_item.dart';
 import '../models/plex_metadata.dart';
+import '../providers/multi_server_provider.dart';
+import '../services/plex_client.dart';
 import '../utils/app_logger.dart';
 
 class OfflineService {
@@ -29,6 +31,7 @@ class OfflineService {
   final Map<String, CancelToken> _downloadTokens = {};
 
   bool _isInitialized = false;
+  MultiServerProvider? _multiServerProvider;
 
   Stream<OfflineDownloadProgress> get progressStream =>
       _progressController.stream;
@@ -39,6 +42,11 @@ class OfflineService {
     await _initDatabase();
     _isInitialized = true;
     appLogger.d('OfflineService initialized');
+  }
+
+  /// Set the multi-server provider for accessing PlexClients
+  void setMultiServerProvider(MultiServerProvider provider) {
+    _multiServerProvider = provider;
   }
 
   Future<void> _initDatabase() async {
@@ -137,6 +145,8 @@ class OfflineService {
     _downloadTokens[item.id] = cancelToken;
 
     try {
+      final localPath = await _generateLocalPath(item);
+
       final offlineItem = OfflineMediaItem(
         id: item.id,
         ratingKey: item.ratingKey,
@@ -145,18 +155,19 @@ class OfflineService {
         title: item.metadata.title ?? 'Unknown',
         type: _getOfflineMediaType(item.metadata.type),
         status: OfflineMediaStatus.downloading,
-        localPath: await _generateLocalPath(item),
+        localPath: localPath,
         fileSize: 0,
         downloadedSize: 0,
         createdAt: DateTime.now(),
+        mediaInfo: item.metadata.toJson(),
       );
 
       await _saveOfflineItem(offlineItem);
 
-      // Download implementation would go here
-      // For now, just simulate progress
-      await _simulateDownload(item, cancelToken);
+      // Perform real video download with retry logic
+      await _downloadVideoWithRetry(item, localPath, cancelToken);
     } catch (e) {
+      appLogger.e('Download failed for ${item.metadata.title}: $e');
       await _updateItemStatus(
         item.id,
         OfflineMediaStatus.failed,
@@ -167,51 +178,209 @@ class OfflineService {
     }
   }
 
-  Future<void> _simulateDownload(
+  /// Downloads the actual video file from Plex server
+  Future<void> _downloadVideo(
     DownloadQueueItem item,
+    String localPath,
     CancelToken cancelToken,
   ) async {
-    const totalSize = 100 * 1024 * 1024; // 100MB simulation
-    var downloaded = 0;
+    try {
+      // Get the Plex client for this server
+      final plexClient = _getPlexClientForServer(item.serverId);
+      if (plexClient == null) {
+        throw Exception('No Plex client found for server: ${item.serverId}');
+      }
 
-    // Update file size in the database
-    await _database!.update(
-      'offline_media',
-      {'file_size': totalSize},
-      where: 'id = ?',
-      whereArgs: [item.id],
-    );
+      // Get the video URL for download
+      final videoUrl = await plexClient.getVideoUrl(item.ratingKey);
+      if (videoUrl == null) {
+        throw Exception('Could not get video URL for: ${item.metadata.title}');
+      }
 
-    while (downloaded < totalSize && !cancelToken.isCancelled) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      downloaded += 1024 * 1024; // 1MB per tick
+      appLogger.i('Starting download for ${item.metadata.title}');
+      appLogger.d('Video URL: $videoUrl');
+      appLogger.d('Local path: $localPath');
 
-      _progressController.add(
-        OfflineDownloadProgress(
-          itemId: item.id,
-          downloadedBytes: downloaded,
-          totalBytes: totalSize,
-          progress: downloaded / totalSize,
+      // Create the local file and ensure parent directory exists
+      final file = File(localPath);
+      await file.parent.create(recursive: true);
+
+      // Create a dedicated Dio instance for downloads with proper timeout settings
+      final dio = Dio();
+      dio.options.connectTimeout = Duration(seconds: 30);
+      dio.options.receiveTimeout = Duration(minutes: 10);
+      dio.options.sendTimeout = Duration(seconds: 30);
+
+      // Download the file with progress tracking
+      final response = await dio.get(
+        videoUrl,
+        cancelToken: cancelToken,
+        options: Options(
+          responseType: ResponseType.bytes,
+          followRedirects: true,
+          receiveDataWhenStatusError: false,
+          validateStatus: (status) {
+            return status != null && status >= 200 && status < 300;
+          },
         ),
+        onReceiveProgress: (received, total) async {
+          try {
+            if (total > 0 && !cancelToken.isCancelled) {
+              final progress = received / total;
+
+              // Update progress in database
+              await _database!.update(
+                'offline_media',
+                {'file_size': total, 'downloaded_size': received},
+                where: 'id = ?',
+                whereArgs: [item.id],
+              );
+
+              // Emit progress event
+              _progressController.add(
+                OfflineDownloadProgress(
+                  itemId: item.id,
+                  downloadedBytes: received,
+                  totalBytes: total,
+                  progress: progress,
+                ),
+              );
+            }
+          } catch (e) {
+            appLogger.w('Error updating download progress: $e');
+            // Don't fail the entire download for progress update errors
+          }
+        },
       );
 
-      await _database!.update(
-        'offline_media',
-        {'downloaded_size': downloaded},
-        where: 'id = ?',
-        whereArgs: [item.id],
-      );
+      // Verify response data
+      if (response.data == null) {
+        throw Exception('No data received from server');
+      }
+
+      // Write the file to disk
+      await file.writeAsBytes(response.data);
+
+      // Verify file was written successfully
+      if (!await file.exists() || await file.length() == 0) {
+        throw Exception('Failed to write video file to disk');
+      }
+
+      if (!cancelToken.isCancelled) {
+        final fileSize = await file.length();
+        appLogger.i(
+          'Download completed for ${item.metadata.title} (${_formatFileSize(fileSize)})',
+        );
+
+        // Final database update with actual file size
+        await _database!.update(
+          'offline_media',
+          {'file_size': fileSize, 'downloaded_size': fileSize},
+          where: 'id = ?',
+          whereArgs: [item.id],
+        );
+
+        await _updateItemStatus(item.id, OfflineMediaStatus.completed);
+
+        // Remove from download queue
+        await _database!.delete(
+          'download_queue',
+          where: 'id = ?',
+          whereArgs: [item.id],
+        );
+      } else {
+        // Clean up partial file if cancelled
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+    } catch (e) {
+      if (!cancelToken.isCancelled) {
+        appLogger.e('Download error for ${item.metadata.title}: $e');
+
+        // Clean up partial file on error
+        final file = File(localPath);
+        if (await file.exists()) {
+          try {
+            await file.delete();
+          } catch (deleteError) {
+            appLogger.w(
+              'Failed to clean up partial download file: $deleteError',
+            );
+          }
+        }
+
+        rethrow;
+      }
+    }
+  }
+
+  /// Format file size in human readable format
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '${bytes}B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)}KB';
+    if (bytes < 1024 * 1024 * 1024)
+      return '${(bytes / 1024 / 1024).toStringAsFixed(1)}MB';
+    return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(1)}GB';
+  }
+
+  /// Download video with retry logic
+  Future<void> _downloadVideoWithRetry(
+    DownloadQueueItem item,
+    String localPath,
+    CancelToken cancelToken,
+  ) async {
+    const maxRetries = 3;
+    const baseDelay = Duration(seconds: 2);
+
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        appLogger.d(
+          'Download attempt $attempt/$maxRetries for ${item.metadata.title}',
+        );
+        await _downloadVideo(item, localPath, cancelToken);
+        return; // Success, exit retry loop
+      } catch (e) {
+        if (cancelToken.isCancelled) {
+          throw e; // Don't retry if cancelled
+        }
+
+        appLogger.w(
+          'Download attempt $attempt failed for ${item.metadata.title}: $e',
+        );
+
+        if (attempt == maxRetries) {
+          // Last attempt failed, give up
+          appLogger.e(
+            'Download failed after $maxRetries attempts for ${item.metadata.title}',
+          );
+          throw e;
+        }
+
+        // Wait before retry with exponential backoff
+        final delay = Duration(
+          milliseconds: baseDelay.inMilliseconds * attempt,
+        );
+        appLogger.d('Retrying download in ${delay.inSeconds} seconds...');
+        await Future.delayed(delay);
+
+        // Clean up partial file before retry
+        final file = File(localPath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+    }
+  }
+
+  /// Get Plex client for a specific server ID
+  PlexClient? _getPlexClientForServer(String serverId) {
+    if (_multiServerProvider == null) {
+      appLogger.e('MultiServerProvider not set in OfflineService');
+      return null;
     }
 
-    if (!cancelToken.isCancelled) {
-      await _updateItemStatus(item.id, OfflineMediaStatus.completed);
-      // Remove from download queue
-      await _database!.delete(
-        'download_queue',
-        where: 'id = ?',
-        whereArgs: [item.id],
-      );
-    }
+    return _multiServerProvider!.getClientForServer(serverId);
   }
 
   Future<void> _saveOfflineItem(OfflineMediaItem item) async {
@@ -284,6 +453,43 @@ class OfflineService {
       whereArgs: [itemId, OfflineMediaStatus.completed.name],
     );
     return result.isNotEmpty;
+  }
+
+  /// Cancel an active download without deleting the offline item
+  Future<void> cancelDownload(String id) async {
+    final cancelToken = _downloadTokens[id];
+    if (cancelToken != null) {
+      cancelToken.cancel();
+      _downloadTokens.remove(id);
+
+      // Update status to failed
+      await _updateItemStatus(
+        id,
+        OfflineMediaStatus.failed,
+        error: 'Cancelled by user',
+      );
+
+      // Clean up partial file
+      final items = await _database!.query(
+        'offline_media',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+
+      if (items.isNotEmpty) {
+        final item = _offlineItemFromMap(items.first);
+        final file = File(item.localPath);
+        if (await file.exists()) {
+          try {
+            await file.delete();
+          } catch (e) {
+            appLogger.w('Failed to delete partial file after cancellation: $e');
+          }
+        }
+      }
+
+      appLogger.i('Download cancelled for item: $id');
+    }
   }
 
   Future<void> deleteOfflineItem(String id) async {
@@ -382,9 +588,21 @@ class OfflineService {
     }
 
     final hash = md5.convert(utf8.encode('${item.serverId}_${item.ratingKey}'));
-    final filename =
-        '${(item.metadata.title ?? 'unknown').replaceAll(RegExp(r'[^\w\s-]'), '')}_${hash.toString().substring(0, 8)}.mp4';
 
+    // Generate a safe filename from the title
+    final safeTitle = (item.metadata.title ?? 'unknown')
+        .replaceAll(RegExp(r'[^\w\s\-\.]'), '')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '_');
+
+    // Determine file extension based on media type
+    String extension = '.mp4'; // Default
+    if (item.metadata.type == 'movie' || item.metadata.type == 'episode') {
+      extension = '.mp4'; // Most common video format
+    }
+
+    final filename =
+        '${safeTitle}_${hash.toString().substring(0, 8)}$extension';
     return join(downloadsDir.path, filename);
   }
 

@@ -179,7 +179,12 @@ class DownloadButton extends StatelessWidget {
         return;
       }
 
-      await offlineProvider.downloadMedia(metadata, serverId, serverName);
+      await offlineProvider.downloadMedia(
+        metadata,
+        serverId,
+        serverName,
+        context,
+      );
 
       _showSnackBar(context, 'Download started for ${metadata.title}');
 
