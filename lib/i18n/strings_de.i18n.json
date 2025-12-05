@@ -513,5 +513,25 @@
     "removedFromCollection": "Aus Sammlung entfernt",
     "removeFromCollectionFailed": "Entfernen aus Sammlung fehlgeschlagen",
     "removeFromCollectionError": "Fehler beim Entfernen aus der Sammlung: ${error}"
+  },
+  "offline": {
+    "mode": "Offline Modus",
+    "downloaded_content": "Heruntergeladene Inhalte",
+    "downloaded_media": "Heruntergeladene Medien",
+    "no_downloaded_content": "Keine heruntergeladenen Inhalte offline verfügbar",
+    "no_downloads_yet": "Noch keine Downloads",
+    "download": "Herunterladen",
+    "downloading": "Lädt herunter",
+    "completed": "Heruntergeladen",
+    "failed": "Download fehlgeschlagen",
+    "pending": "Ausstehend",
+    "delete_download": "Download löschen",
+    "download_progress": "Download-Fortschritt",
+    "storage_used": "Verwendeter Speicher",
+    "manage_downloads": "Downloads verwalten",
+    "download_quality": "Download-Qualität",
+    "wifi_only": "Nur über WLAN herunterladen",
+    "auto_download": "Automatischer Download",
+    "download_limit": "Download-Limit"
   }
 }

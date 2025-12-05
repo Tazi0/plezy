@@ -1,22 +1,24 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../../services/plex_client.dart';
+import '../i18n/strings.g.dart';
 import '../models/plex_metadata.dart';
 import '../models/plex_playlist.dart';
 import '../providers/multi_server_provider.dart';
 import '../providers/playback_state_provider.dart';
-import '../utils/provider_extensions.dart';
+import '../screens/media_detail_screen.dart';
+import '../screens/season_detail_screen.dart';
 import '../utils/app_logger.dart';
 import '../utils/collection_playlist_play_helper.dart';
 import '../utils/keyboard_utils.dart';
 import '../utils/library_refresh_notifier.dart';
+import '../utils/provider_extensions.dart';
 import '../utils/video_player_navigation.dart';
-import '../screens/media_detail_screen.dart';
-import '../screens/season_detail_screen.dart';
 import '../widgets/file_info_bottom_sheet.dart';
-import '../i18n/strings.g.dart';
 
 /// Helper class to store menu action data
 class _MenuAction {

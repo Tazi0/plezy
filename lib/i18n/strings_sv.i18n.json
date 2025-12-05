@@ -511,7 +511,27 @@
     "removeFromCollection": "Ta bort från samling",
     "removeFromCollectionConfirm": "Ta bort \"${title}\" från denna samling?",
     "removedFromCollection": "Borttagen från samling",
-    "removeFromCollectionFailed": "Misslyckades med att ta bort från samling",
+    "removeFromCollectionFailed": "Kunde inte ta bort från samling",
     "removeFromCollectionError": "Fel vid borttagning från samling: ${error}"
+  },
+  "offline": {
+    "mode": "Offline Läge",
+    "downloaded_content": "Nedladdat Innehåll",
+    "downloaded_media": "Nedladdade Media",
+    "no_downloaded_content": "Inget nedladdat innehåll tillgängligt offline",
+    "no_downloads_yet": "Inga nedladdningar ännu",
+    "download": "Ladda ner",
+    "downloading": "Laddar ner",
+    "completed": "Nedladdat",
+    "failed": "Nedladdning misslyckades",
+    "pending": "Väntar",
+    "delete_download": "Radera Nedladdning",
+    "download_progress": "Nedladdningsförlopp",
+    "storage_used": "Använt Lagringsutrymme",
+    "manage_downloads": "Hantera Nedladdningar",
+    "download_quality": "Nedladdningskvalitet",
+    "wifi_only": "Ladda endast ner via WiFi",
+    "auto_download": "Automatisk Nedladdning",
+    "download_limit": "Nedladdningsgräns"
   }
 }

@@ -1,29 +1,32 @@
-import 'package:flutter/material.dart';
 import 'dart:io' show Platform;
-import 'package:window_manager/window_manager.dart';
+
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'screens/main_screen.dart';
-import 'screens/auth_screen.dart';
-import 'services/storage_service.dart';
-import 'services/macos_titlebar_service.dart';
-import 'services/fullscreen_state_manager.dart';
-import 'services/update_service.dart';
-import 'services/settings_service.dart';
-import 'providers/user_profile_provider.dart';
-import 'providers/plex_client_provider.dart';
-import 'providers/multi_server_provider.dart';
-import 'providers/server_state_provider.dart';
-import 'providers/theme_provider.dart';
-import 'providers/settings_provider.dart';
+import 'package:window_manager/window_manager.dart';
+
+import 'i18n/strings.g.dart';
 import 'providers/hidden_libraries_provider.dart';
+import 'providers/multi_server_provider.dart';
+import 'providers/offline_provider.dart';
 import 'providers/playback_state_provider.dart';
-import 'services/multi_server_manager.dart';
+import 'providers/plex_client_provider.dart';
+import 'providers/server_state_provider.dart';
+import 'providers/settings_provider.dart';
+import 'providers/theme_provider.dart';
+import 'providers/user_profile_provider.dart';
+import 'screens/auth_screen.dart';
+import 'screens/main_screen.dart';
 import 'services/data_aggregation_service.dart';
+import 'services/fullscreen_state_manager.dart';
+import 'services/macos_titlebar_service.dart';
+import 'services/multi_server_manager.dart';
 import 'services/server_registry.dart';
+import 'services/settings_service.dart';
+import 'services/storage_service.dart';
+import 'services/update_service.dart';
 import 'utils/app_logger.dart';
 import 'utils/orientation_helper.dart';
-import 'i18n/strings.g.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -101,6 +104,10 @@ class MainApp extends StatelessWidget {
           lazy: true,
         ),
         ChangeNotifierProvider(create: (context) => PlaybackStateProvider()),
+        ChangeNotifierProvider(
+          create: (context) => OfflineProvider()..initialize(),
+          lazy: false,
+        ),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {

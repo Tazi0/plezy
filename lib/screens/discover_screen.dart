@@ -1,33 +1,38 @@
 import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+
 import '../../services/plex_client.dart';
-import '../utils/plex_image_helper.dart';
-import '../models/plex_metadata.dart';
-import '../models/plex_hub.dart';
-import '../providers/multi_server_provider.dart';
-import '../providers/server_state_provider.dart';
-import '../providers/hidden_libraries_provider.dart';
-import '../providers/playback_state_provider.dart';
-import '../widgets/desktop_app_bar.dart';
-import 'profile/user_avatar_widget.dart';
-import '../widgets/hub_section.dart';
-import '../widgets/hub_navigation_controller.dart';
-import 'profile/profile_switch_screen.dart';
-import '../providers/user_profile_provider.dart';
-import '../providers/settings_provider.dart';
-import '../mixins/refreshable.dart';
 import '../i18n/strings.g.dart';
 import '../mixins/item_updatable.dart';
+import '../mixins/refreshable.dart';
+import '../models/plex_hub.dart';
+import '../models/plex_metadata.dart';
+import '../providers/hidden_libraries_provider.dart';
+import '../providers/multi_server_provider.dart';
+import '../providers/offline_provider.dart';
+import '../providers/playback_state_provider.dart';
+import '../providers/server_state_provider.dart';
+import '../providers/settings_provider.dart';
+import '../providers/user_profile_provider.dart';
 import '../utils/app_logger.dart';
+import '../utils/content_rating_formatter.dart';
 import '../utils/keyboard_utils.dart';
+import '../utils/plex_image_helper.dart';
 import '../utils/provider_extensions.dart';
 import '../utils/video_player_navigation.dart';
-import '../utils/content_rating_formatter.dart';
+import '../widgets/desktop_app_bar.dart';
+import '../widgets/hub_navigation_controller.dart';
+import '../widgets/hub_section.dart';
+import '../widgets/offline_media_section.dart';
 import 'auth_screen.dart';
 import 'main_screen.dart';
+import 'offline_downloads_screen.dart';
+import 'profile/profile_switch_screen.dart';
+import 'profile/user_avatar_widget.dart';
 
 class DiscoverScreen extends StatefulWidget {
   final VoidCallback? onBecameVisible;
@@ -615,6 +620,30 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                       icon: const Icon(Icons.refresh),
                       onPressed: _loadContent,
                     ),
+                    // Downloads management button
+                    Consumer<OfflineProvider>(
+                      builder: (context, offlineProvider, child) {
+                        final hasDownloads =
+                            offlineProvider.offlineMedia.isNotEmpty;
+                        return IconButton(
+                          icon: Icon(
+                            Icons.download,
+                            color: hasDownloads
+                                ? Theme.of(context).colorScheme.primary
+                                : null,
+                          ),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const OfflineDownloadsScreen(),
+                              ),
+                            );
+                          },
+                          tooltip: t.offline.manage_downloads,
+                        );
+                      },
+                    ),
                     Consumer<UserProfileProvider>(
                       builder: (context, userProvider, child) {
                         return PopupMenuButton<String>(
@@ -694,6 +723,22 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                       if (_onDeck.isNotEmpty &&
                           settingsProvider.showHeroSection) {
                         return _buildHeroSection();
+                      }
+                      return const SliverToBoxAdapter(child: SizedBox.shrink());
+                    },
+                  ),
+
+                  // Offline Media Section
+                  Consumer<OfflineProvider>(
+                    builder: (context, offlineProvider, child) {
+                      if (offlineProvider.isOfflineMode ||
+                          offlineProvider.completedMedia.isNotEmpty) {
+                        return const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: OfflineMediaSection(),
+                          ),
+                        );
                       }
                       return const SliverToBoxAdapter(child: SizedBox.shrink());
                     },

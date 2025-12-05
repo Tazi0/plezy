@@ -513,5 +513,25 @@
     "removedFromCollection": "Uit collectie verwijderd",
     "removeFromCollectionFailed": "Verwijderen uit collectie mislukt",
     "removeFromCollectionError": "Fout bij verwijderen uit collectie: ${error}"
+  },
+  "offline": {
+    "mode": "Offline Modus",
+    "downloaded_content": "Gedownloade Inhoud",
+    "downloaded_media": "Gedownloade Media",
+    "no_downloaded_content": "Geen gedownloade inhoud beschikbaar offline",
+    "no_downloads_yet": "Nog geen downloads",
+    "download": "Downloaden",
+    "downloading": "Aan het downloaden",
+    "completed": "Gedownload",
+    "failed": "Download mislukt",
+    "pending": "In afwachting",
+    "delete_download": "Download verwijderen",
+    "download_progress": "Download Voortgang",
+    "storage_used": "Gebruikte Opslag",
+    "manage_downloads": "Beheer Downloads",
+    "download_quality": "Download Kwaliteit",
+    "wifi_only": "Alleen downloaden via WiFi",
+    "auto_download": "Automatische Download",
+    "download_limit": "Download Limiet"
   }
 }

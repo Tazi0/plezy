@@ -511,5 +511,25 @@
     "errorAdding": "Failed to add to playlist",
     "errorReordering": "Failed to reorder playlist item",
     "errorRemoving": "Failed to remove from playlist"
+  },
+  "offline": {
+    "mode": "Offline Mode",
+    "downloaded_content": "Downloaded Content",
+    "downloaded_media": "Downloaded Media",
+    "no_downloaded_content": "No downloaded content available offline",
+    "no_downloads_yet": "No downloads yet",
+    "download": "Download",
+    "downloading": "Downloading",
+    "completed": "Downloaded",
+    "failed": "Download Failed",
+    "pending": "Pending",
+    "delete_download": "Delete Download",
+    "download_progress": "Download Progress",
+    "storage_used": "Storage Used",
+    "manage_downloads": "Manage Downloads",
+    "download_quality": "Download Quality",
+    "wifi_only": "Download on WiFi only",
+    "auto_download": "Auto Download",
+    "download_limit": "Download Limit"
   }
 }

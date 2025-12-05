@@ -27,6 +27,8 @@ dependencies:
   slang_flutter: ^3.31.0
   duration: ^4.0.3
   connectivity_plus: ^6.0.5
+  crypto: ^3.0.3
+  sqflite: ^2.3.0
   os_media_controls:
     git:
       url: https://github.com/edde746/os-media-controls

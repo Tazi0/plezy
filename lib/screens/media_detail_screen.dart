@@ -2,25 +2,27 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../i18n/strings.g.dart';
-import '../widgets/plex_optimized_image.dart';
-import '../utils/plex_image_helper.dart';
-import '../mixins/keyboard_long_press_mixin.dart';
-import '../widgets/focus/focus_indicator.dart';
 import '../../services/plex_client.dart';
+import '../i18n/strings.g.dart';
+import '../mixins/keyboard_long_press_mixin.dart';
 import '../models/plex_metadata.dart';
+import '../providers/multi_server_provider.dart';
 import '../providers/playback_state_provider.dart';
 import '../theme/theme_helper.dart';
 import '../utils/app_logger.dart';
 import '../utils/content_rating_formatter.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/keyboard_utils.dart';
+import '../utils/plex_image_helper.dart';
 import '../utils/provider_extensions.dart';
 import '../utils/video_player_navigation.dart';
 import '../widgets/app_bar_back_button.dart';
 import '../widgets/desktop_app_bar.dart';
+import '../widgets/download_button.dart';
+import '../widgets/focus/focus_indicator.dart';
 import '../widgets/horizontal_scroll_with_arrows.dart';
 import '../widgets/media_context_menu.dart';
+import '../widgets/plex_optimized_image.dart';
 import 'season_detail_screen.dart';
 
 class MediaDetailScreen extends StatefulWidget {
@@ -899,6 +901,33 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                             minimumSize: const Size(48, 48),
                             maximumSize: const Size(48, 48),
                           ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Download button
+                        Consumer<MultiServerProvider>(
+                          builder: (context, multiServerProvider, child) {
+                            final serverId =
+                                metadata.serverId ??
+                                (multiServerProvider.hasConnectedServers
+                                    ? multiServerProvider.onlineServerIds.first
+                                    : '');
+                            final serverName = 'Plex Server';
+
+                            if (serverId.isNotEmpty) {
+                              return SizedBox(
+                                width: 48,
+                                height: 48,
+                                child: DownloadButton(
+                                  metadata: metadata,
+                                  serverId: serverId,
+                                  serverName: serverName,
+                                  showText: false,
+                                  iconSize: 20,
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
                         ),
                       ],
                     ),
