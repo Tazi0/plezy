@@ -15,6 +15,7 @@ import '../models/plex_metadata.dart';
 import '../providers/multi_server_provider.dart';
 import '../services/plex_client.dart';
 import '../utils/app_logger.dart';
+import '../utils/plex_image_helper.dart';
 
 class OfflineService {
   static OfflineService? _instance;
@@ -197,6 +198,15 @@ class OfflineService {
         throw Exception('Could not get video URL for: ${item.metadata.title}');
       }
 
+      // Download poster image if available
+      String? localPosterPath;
+      try {
+        localPosterPath = await _downloadPosterImage(item, plexClient);
+      } catch (e) {
+        appLogger.w('Failed to download poster image: $e');
+        // Continue without poster - video download is more important
+      }
+
       appLogger.i('Starting download for ${item.metadata.title}');
       appLogger.d('Video URL: $videoUrl');
       appLogger.d('Local path: $localPath');
@@ -279,6 +289,11 @@ class OfflineService {
           where: 'id = ?',
           whereArgs: [item.id],
         );
+
+        // Update metadata with local poster path if downloaded
+        if (localPosterPath != null) {
+          await _updateItemMetadataWithPoster(item.id, localPosterPath);
+        }
 
         await _updateItemStatus(item.id, OfflineMediaStatus.completed);
 
@@ -604,6 +619,104 @@ class OfflineService {
     final filename =
         '${safeTitle}_${hash.toString().substring(0, 8)}$extension';
     return join(downloadsDir.path, filename);
+  }
+
+  /// Download poster image for offline media
+  Future<String?> _downloadPosterImage(
+    DownloadQueueItem item,
+    PlexClient client,
+  ) async {
+    try {
+      // Get poster URL from metadata
+      String? posterPath;
+      final metadata = item.metadata;
+
+      if (metadata.thumb != null && metadata.thumb!.isNotEmpty) {
+        posterPath = metadata.thumb;
+      } else if (metadata.art != null && metadata.art!.isNotEmpty) {
+        posterPath = metadata.art;
+      }
+
+      if (posterPath == null) {
+        appLogger.d('No poster available for ${metadata.title}');
+        return null;
+      }
+
+      // Generate local poster path
+      final hash = md5.convert(
+        utf8.encode('${item.serverId}_${item.ratingKey}'),
+      );
+      final posterHash = md5.convert(utf8.encode('${posterPath}'));
+      final appDir = await getApplicationDocumentsDirectory();
+      final postersDir = Directory(join(appDir.path, 'Downloads', 'posters'));
+      await postersDir.create(recursive: true);
+
+      final posterFileName =
+          '${hash.toString().substring(0, 8)}_${posterHash.toString().substring(0, 8)}.jpg';
+      final localPosterPath = join(postersDir.path, posterFileName);
+
+      // Download poster image
+      final posterUrl = PlexImageHelper.getOptimizedImageUrl(
+        client: client,
+        thumbPath: posterPath,
+        maxWidth: 300,
+        maxHeight: 450,
+        devicePixelRatio: 1.0,
+        enableTranscoding: true,
+      );
+
+      if (posterUrl.isEmpty) {
+        appLogger.w('Could not generate poster URL for ${metadata.title}');
+        return null;
+      }
+
+      final response = await Dio().get(
+        posterUrl,
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      final posterFile = File(localPosterPath);
+      await posterFile.writeAsBytes(response.data);
+
+      appLogger.d('Downloaded poster for ${metadata.title}: $localPosterPath');
+      return localPosterPath;
+    } catch (e) {
+      appLogger.w('Error downloading poster image: $e');
+      return null;
+    }
+  }
+
+  /// Update offline item metadata with local poster path
+  Future<void> _updateItemMetadataWithPoster(
+    String itemId,
+    String posterPath,
+  ) async {
+    try {
+      final result = await _database!.query(
+        'offline_media',
+        where: 'id = ?',
+        whereArgs: [itemId],
+      );
+
+      if (result.isNotEmpty) {
+        final item = _offlineItemFromMap(result.first);
+        final updatedMediaInfo = Map<String, dynamic>.from(
+          item.mediaInfo ?? {},
+        );
+
+        // Store local poster path in metadata
+        updatedMediaInfo['localPosterPath'] = posterPath;
+
+        await _database!.update(
+          'offline_media',
+          {'metadata': jsonEncode(updatedMediaInfo)},
+          where: 'id = ?',
+          whereArgs: [itemId],
+        );
+      }
+    } catch (e) {
+      appLogger.w('Failed to update metadata with poster path: $e');
+    }
   }
 
   OfflineMediaType _parseOfflineMediaType(String? typeString) {

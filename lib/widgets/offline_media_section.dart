@@ -6,7 +6,7 @@ import '../models/offline_media_item.dart';
 import '../models/plex_metadata.dart';
 import '../providers/offline_provider.dart';
 import '../screens/offline_downloads_screen.dart';
-import 'media_card.dart';
+import 'offline_media_card.dart';
 
 class OfflineMediaSection extends StatelessWidget {
   const OfflineMediaSection({super.key});
@@ -145,34 +145,13 @@ class OfflineMediaSection extends StatelessWidget {
 
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Stack(
-                  children: [
-                    MediaCard(
-                      key: Key(item.id),
-                      item: metadata,
-                      width: cardWidth,
-                      height: posterHeight,
-                      onRefresh: (_) => _handleItemRefresh(item, context),
-                      forceGridMode: true,
-                    ),
-                    // Offline indicator overlay
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade600,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.download_done,
-                          size: 16,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
+                child: OfflineMediaCard(
+                  key: Key(item.id),
+                  offlineItem: item,
+                  metadata: metadata,
+                  width: cardWidth,
+                  height: containerHeight,
+                  onRefresh: () => _handleItemRefresh(item, context),
                 ),
               );
             },
@@ -233,6 +212,21 @@ class OfflineMediaSection extends StatelessWidget {
     // Extract metadata from stored mediaInfo if available
     final mediaInfo = item.mediaInfo;
 
+    // Use local poster path if available, otherwise fallback to original
+    String? thumbPath;
+    String? artPath;
+
+    if (mediaInfo != null && mediaInfo['localPosterPath'] != null) {
+      // Use local poster for both thumb and art
+      final localPoster = 'file://${mediaInfo['localPosterPath']}';
+      thumbPath = localPoster;
+      artPath = localPoster;
+    } else {
+      // Fallback to original paths (will fail when offline, but preserved for metadata)
+      thumbPath = mediaInfo?['thumb'] as String?;
+      artPath = mediaInfo?['art'] as String?;
+    }
+
     return PlexMetadata(
       ratingKey: item.ratingKey,
       key: '/library/metadata/${item.ratingKey}',
@@ -249,8 +243,8 @@ class OfflineMediaSection extends StatelessWidget {
           ? (mediaInfo!['audienceRating'] as num).toDouble()
           : null,
       year: mediaInfo?['year'] as int?,
-      thumb: mediaInfo?['thumb'] as String?,
-      art: mediaInfo?['art'] as String?,
+      thumb: thumbPath,
+      art: artPath,
       duration: mediaInfo?['duration'] as int?,
       addedAt: mediaInfo?['addedAt'] as int?,
       updatedAt: mediaInfo?['updatedAt'] as int?,
