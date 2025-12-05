@@ -6,8 +6,7 @@ import '../models/offline_media_item.dart';
 import '../models/plex_metadata.dart';
 import '../providers/offline_provider.dart';
 import '../screens/offline_downloads_screen.dart';
-import '../utils/app_logger.dart';
-import '../utils/video_player_navigation.dart';
+import 'media_card.dart';
 
 class OfflineMediaSection extends StatelessWidget {
   const OfflineMediaSection({super.key});
@@ -16,9 +15,21 @@ class OfflineMediaSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<OfflineProvider>(
       builder: (context, offlineProvider, child) {
-        if (!offlineProvider.isOfflineMode &&
-            offlineProvider.completedMedia.isEmpty) {
+        // Only show the section when user is offline
+        if (!offlineProvider.isOfflineMode) {
           return const SizedBox.shrink();
+        }
+
+        // If offline but no completed media, show empty state
+        if (offlineProvider.completedMedia.isEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSectionHeader(context, offlineProvider),
+              const SizedBox(height: 12),
+              _buildEmptyState(context, offlineProvider.isOfflineMode),
+            ],
+          );
         }
 
         return Column(
@@ -100,125 +111,85 @@ class OfflineMediaSection extends StatelessWidget {
       return _buildEmptyState(context, offlineProvider.isOfflineMode);
     }
 
-    return SizedBox(
-      height: 200,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        scrollDirection: Axis.horizontal,
-        itemCount: completedMedia.length,
-        itemBuilder: (context, index) {
-          final item = completedMedia[index];
-          return Padding(
-            padding: EdgeInsets.only(
-              right: index < completedMedia.length - 1 ? 12 : 0,
-            ),
-            child: _buildMediaItem(context, item, offlineProvider),
-          );
-        },
-      ),
-    );
-  }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Responsive card width based on screen size (same as HubSection)
+        final screenWidth = constraints.maxWidth;
+        final cardWidth = screenWidth > 1600
+            ? 220.0
+            : screenWidth > 1200
+            ? 200.0
+            : screenWidth > 800
+            ? 190.0
+            : 160.0;
 
-  Widget _buildMediaItem(
-    BuildContext context,
-    OfflineMediaItem item,
-    OfflineProvider offlineProvider,
-  ) {
-    final theme = Theme.of(context);
+        // MediaCard has 8px padding on all sides (16px total horizontally)
+        // So actual poster width is cardWidth - 16
+        final posterWidth = cardWidth - 16;
+        // 2:3 poster aspect ratio (height is 1.5x width)
+        final posterHeight = posterWidth * 1.5;
+        // Container height = poster + padding + spacing + text + focus indicator headroom
+        // 8px top padding + posterHeight + 4px spacing + ~26px text + 8px bottom padding
+        // + 10px extra for focus indicator border (3px) and scale effect (1.02x)
+        final containerHeight = posterHeight + 46 + 10;
 
-    return GestureDetector(
-      onTap: () => _handleItemTap(context, item),
-      child: SizedBox(
-        width: 120,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 160,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                color: theme.colorScheme.surfaceVariant,
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+        return SizedBox(
+          height: containerHeight,
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            scrollDirection: Axis.horizontal,
+            itemCount: completedMedia.length,
+            itemBuilder: (context, index) {
+              final item = completedMedia[index];
+              final metadata = _createMetadataFromOfflineItem(item);
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
                 child: Stack(
                   children: [
-                    _buildPoster(context, item),
-                    _buildOfflineIndicator(context),
-                    if (item.type == OfflineMediaType.episode)
-                      _buildEpisodeOverlay(context, item),
+                    MediaCard(
+                      key: Key(item.id),
+                      item: metadata,
+                      width: cardWidth,
+                      height: posterHeight,
+                      onRefresh: (_) => _handleItemRefresh(item, context),
+                      forceGridMode: true,
+                    ),
+                    // Offline indicator overlay
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade600,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.download_done,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              item.title,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w500,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPoster(BuildContext context, OfflineMediaItem item) {
-    // For now, show a placeholder since we don't have the image URL stored
-    // In a complete implementation, we'd store image URLs in mediaInfo
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      color: Theme.of(context).colorScheme.surfaceVariant,
-      child: Icon(
-        _getTypeIcon(item.type),
-        size: 48,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
-    );
-  }
-
-  Widget _buildOfflineIndicator(BuildContext context) {
-    return Positioned(
-      top: 8,
-      right: 8,
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: Colors.green.shade600,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const Icon(Icons.download_done, size: 16, color: Colors.white),
-      ),
-    );
-  }
-
-  Widget _buildEpisodeOverlay(BuildContext context, OfflineMediaItem item) {
-    return Positioned(
-      bottom: 8,
-      left: 8,
-      right: 8,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.7),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          _getEpisodeInfo(item),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
+              );
+            },
           ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
+        );
+      },
     );
+  }
+
+  void _handleItemRefresh(OfflineMediaItem _, BuildContext context) {
+    // Refresh functionality if needed for offline items
+    // For now, we can trigger a general refresh of the offline provider
+    final offlineProvider = Provider.of<OfflineProvider>(
+      context,
+      listen: false,
+    );
+    offlineProvider.refresh();
   }
 
   Widget _buildEmptyState(BuildContext context, bool isOfflineMode) {
@@ -254,45 +225,6 @@ class OfflineMediaSection extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-
-  IconData _getTypeIcon(OfflineMediaType type) {
-    switch (type) {
-      case OfflineMediaType.movie:
-        return Icons.movie;
-      case OfflineMediaType.episode:
-        return Icons.tv;
-      case OfflineMediaType.season:
-        return Icons.playlist_play;
-      case OfflineMediaType.series:
-        return Icons.tv;
-    }
-  }
-
-  String _getEpisodeInfo(OfflineMediaItem item) {
-    // Extract episode info from mediaInfo if available
-    if (item.mediaInfo != null) {
-      final parentIndex = item.mediaInfo!['parentIndex'];
-      final index = item.mediaInfo!['index'];
-      if (parentIndex != null && index != null) {
-        return 'S${parentIndex}E${index}';
-      }
-    }
-    return item.type.name.toUpperCase();
-  }
-
-  void _handleItemTap(BuildContext context, OfflineMediaItem item) {
-    appLogger.d('Tapped offline media item: ${item.title}');
-
-    // Convert offline item to PlexMetadata for video player navigation
-    final metadata = _createMetadataFromOfflineItem(item);
-
-    // Navigate to video player for offline playback
-    navigateToOfflineVideoPlayer(
-      context,
-      metadata: metadata,
-      offlineItem: item,
     );
   }
 

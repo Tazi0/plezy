@@ -68,8 +68,18 @@ class OfflinePlaybackService {
     required bool isOfflineMode,
     bool forceOfflinePlayback = false,
   }) {
-    // Only use offline playback when explicitly forced (user tapped on offline content)
+    // Always use offline playback when explicitly forced (user tapped on offline content)
     if (forceOfflinePlayback && offlineItem?.isCompleted == true) {
+      return true;
+    }
+
+    // Use offline playback if we're in offline mode and have completed content
+    if (isOfflineMode && offlineItem?.isCompleted == true) {
+      return true;
+    }
+
+    // Prefer offline playback when completed content is available (saves bandwidth)
+    if (offlineItem?.isCompleted == true) {
       return true;
     }
 

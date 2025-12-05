@@ -694,28 +694,53 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                   const SliverFillRemaining(
                     child: Center(child: CircularProgressIndicator()),
                   ),
-                if (_errorMessage != null)
-                  SliverFillRemaining(
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            size: 48,
-                            color: Colors.red,
+                // Offline Media Section - show even when there are server errors
+                if (!_isLoading)
+                  Consumer<OfflineProvider>(
+                    builder: (context, offlineProvider, child) {
+                      // Only show if offline mode is active
+                      if (offlineProvider.isOfflineMode) {
+                        return SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: OfflineMediaSection(),
                           ),
-                          const SizedBox(height: 16),
-                          Text(_errorMessage!),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _loadContent,
-                            child: Text(t.common.retry),
-                          ),
-                        ],
-                      ),
-                    ),
+                        );
+                      }
+                      return const SliverToBoxAdapter(child: SizedBox.shrink());
+                    },
                   ),
+                // Show error only if not in offline mode or no offline content
+                Consumer<OfflineProvider>(
+                  builder: (context, offlineProvider, child) {
+                    if (_errorMessage != null &&
+                        (!offlineProvider.isOfflineMode ||
+                            offlineProvider.completedMedia.isEmpty)) {
+                      return SliverFillRemaining(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                size: 48,
+                                color: Colors.red,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(_errorMessage!),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed: _loadContent,
+                                child: Text(t.common.retry),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+                    return const SliverToBoxAdapter(child: SizedBox.shrink());
+                  },
+                ),
                 if (!_isLoading && _errorMessage == null) ...[
                   // Hero Section (Continue Watching)
                   Consumer<SettingsProvider>(
@@ -723,22 +748,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                       if (_onDeck.isNotEmpty &&
                           settingsProvider.showHeroSection) {
                         return _buildHeroSection();
-                      }
-                      return const SliverToBoxAdapter(child: SizedBox.shrink());
-                    },
-                  ),
-
-                  // Offline Media Section
-                  Consumer<OfflineProvider>(
-                    builder: (context, offlineProvider, child) {
-                      if (offlineProvider.isOfflineMode ||
-                          offlineProvider.completedMedia.isNotEmpty) {
-                        return const SliverToBoxAdapter(
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            child: OfflineMediaSection(),
-                          ),
-                        );
                       }
                       return const SliverToBoxAdapter(child: SizedBox.shrink());
                     },
